@@ -153,7 +153,7 @@ class Sparkline extends StatelessWidget {
   /// If callback returns true, a circle is drawn for given point.
   ///
   /// This callback overrides behaviors given by [pointsMode] and [kLine]
-  final bool Function(int index)? pointShown;
+  final bool Function(int index, String? kLine)? pointShown;
 
   /// Line point labels callback
   /// Takes the line points from [data] and returns a string
@@ -367,7 +367,7 @@ class _SparklinePainter extends CustomPainter {
   final int? pointIndex;
   final double pointSize;
   final Color pointColor;
-  final bool Function(int index)? pointShown;
+  final bool Function(int index, String? kLine)? pointShown;
   final String Function(double value)? pointLabel;
 
   final bool enableThreshold;
@@ -477,6 +477,7 @@ class _SparklinePainter extends CustomPainter {
     final double widthNormalizer = width / (dataPoints.length - 1);
 
     for (int i = 0; i < dataPoints.length; i++) {
+      String? key;
       double x = i * widthNormalizer + lineWidth / 2;
       double y = (!heightNormalizer.isInfinite)
           ? height - (dataPoints[i] - _min) * heightNormalizer + lineWidth / 2
@@ -490,16 +491,22 @@ class _SparklinePainter extends CustomPainter {
 
       if (dataPoints[i] == spDataPoints['max']['val']) {
         if ((i != 0 && i != (dataPoints.length - 1))) {
+          key = 'max';
           spDataPoints['max']['offset'] = normalized[i];
         }
       }
       if (dataPoints[i] == spDataPoints['min']['val']) {
         if (i != 0 && i != (dataPoints.length - 1)) {
+          key = 'max';
           spDataPoints['min']['offset'] = normalized[i];
         }
       }
 
-      if (pointShown != null && pointShown!(i) ||
+      if (i == 0 || i == (dataPoints.length - 1)) {
+        key ??= i == 0 ? 'first' : 'last';
+      }
+
+      if (pointShown != null && pointShown!(i, key) ||
           pointsMode == PointsMode.all ||
           (pointsMode == PointsMode.last && i == dataPoints.length - 1) ||
           (pointsMode == PointsMode.atIndex && i == pointIndex)) {
