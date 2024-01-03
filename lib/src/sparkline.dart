@@ -73,6 +73,7 @@ class Sparkline extends StatelessWidget {
     this.pointSize = 4.0,
     this.pointLabel,
     this.pointShown,
+    this.pointsDraw,
     this.pointColor = const Color(0xFF0277BD), //Colors.lightBlue[800]
     this.sharpCorners = false,
     this.useCubicSmoothing = false,
@@ -146,7 +147,7 @@ class Sparkline extends StatelessWidget {
   /// Defaults to Colors.lightBlue[800].
   final Color pointColor;
 
-  /// Show point paint callback
+  /// Show point callback
   ///
   /// Takes the line point index in [data].
   ///
@@ -154,6 +155,12 @@ class Sparkline extends StatelessWidget {
   ///
   /// This callback overrides behaviors given by [pointsMode] and [kLine]
   final bool Function(int index, String? kLine)? pointShown;
+
+  /// Points draw callback
+  ///
+  /// This callback overrides default point drawing behavior
+  final void Function(Canvas canvas, List<Offset> points, String? kLine)?
+      pointsDraw;
 
   /// Line point labels callback
   /// Takes the line points from [data] and returns a string
@@ -262,6 +269,11 @@ class Sparkline extends StatelessWidget {
   ///backgroudColor
   final Color? backgroundColor;
 
+  static const kFirst = 'first';
+  static const kLast = 'last';
+  static const kMin = 'min';
+  static const kMax = 'max';
+
   @override
   Widget build(BuildContext context) {
     return LimitedBox(
@@ -280,12 +292,13 @@ class Sparkline extends StatelessWidget {
           fillMode: fillMode,
           fillColor: fillColor,
           fillGradient: fillGradient,
+          pointSize: pointSize,
           pointsMode: pointsMode,
           pointIndex: pointIndex,
-          pointSize: pointSize,
-          pointShown: pointShown,
-          pointLabel: pointLabel,
           pointColor: pointColor,
+          pointShown: pointShown,
+          pointsDraw: pointsDraw,
+          pointLabel: pointLabel,
           enableGridLines: enableGridLines,
           gridLinelabel: gridLinelabel,
           gridLineColor: gridLineColor,
@@ -332,6 +345,7 @@ class _SparklinePainter extends CustomPainter {
     required this.enableThreshold,
     required this.thresholdSize,
     this.pointShown,
+    this.pointsDraw,
     this.pointLabel,
     this.gridLinelabelPrefix = '',
     this.gridLineLabelPrecision = 3,
@@ -368,6 +382,8 @@ class _SparklinePainter extends CustomPainter {
   final double pointSize;
   final Color pointColor;
   final bool Function(int index, String? kLine)? pointShown;
+  final void Function(Canvas canvas, List<Offset> points, String? kLine)?
+      pointsDraw;
   final String Function(double value)? pointLabel;
 
   final bool enableThreshold;
@@ -433,14 +449,18 @@ class _SparklinePainter extends CustomPainter {
             ((_max - _min) == 0 ? 1 : (_max - _min));
 
     final List<Offset> points = <Offset>[];
+    final List<Offset> kFPoints = <Offset>[];
+    final List<Offset> kLPoints = <Offset>[];
     final List<Offset> normalized = <Offset>[];
+    final List<Offset> kMinPoints = <Offset>[];
+    final List<Offset> kMaxPoints = <Offset>[];
 
     //max,min,first,last
     final Map spDataPoints = {
-      'max': {'val': _max, 'offset': Offset(-1, -1)},
-      'min': {'val': _min, 'offset': Offset(-1, -1)},
-      'first': {'val': dataPoints.first, 'offset': Offset(-1, -1)},
-      'last': {'val': dataPoints.last, 'offset': Offset(-1, -1)},
+      Sparkline.kMax: {'val': _max, 'offset': Offset(-1, -1)},
+      Sparkline.kMin: {'val': _min, 'offset': Offset(-1, -1)},
+      Sparkline.kFirst: {'val': dataPoints.first, 'offset': Offset(-1, -1)},
+      Sparkline.kLast: {'val': dataPoints.last, 'offset': Offset(-1, -1)},
     };
     if (gridLineTextPainters.isEmpty) {
       update();
@@ -489,37 +509,53 @@ class _SparklinePainter extends CustomPainter {
 
       normalized.add(Offset(x, y));
 
-      if (dataPoints[i] == spDataPoints['max']['val']) {
+      if (dataPoints[i] == spDataPoints[Sparkline.kMax]['val']) {
         if ((i != 0 && i != (dataPoints.length - 1))) {
-          key = 'max';
-          spDataPoints['max']['offset'] = normalized[i];
+          key = Sparkline.kMax;
+          spDataPoints[Sparkline.kMax]['offset'] = normalized[i];
         }
       }
-      if (dataPoints[i] == spDataPoints['min']['val']) {
+      if (dataPoints[i] == spDataPoints[Sparkline.kMin]['val']) {
         if (i != 0 && i != (dataPoints.length - 1)) {
-          key = 'max';
-          spDataPoints['min']['offset'] = normalized[i];
+          key = Sparkline.kMin;
+          spDataPoints[Sparkline.kMin]['offset'] = normalized[i];
         }
       }
 
       if (i == 0 || i == (dataPoints.length - 1)) {
-        key ??= i == 0 ? 'first' : 'last';
+        key ??= i == 0 ? Sparkline.kFirst : Sparkline.kLast;
       }
 
       if (pointShown != null && pointShown!(i, key) ||
           pointsMode == PointsMode.all ||
           (pointsMode == PointsMode.last && i == dataPoints.length - 1) ||
           (pointsMode == PointsMode.atIndex && i == pointIndex)) {
-        points.add(normalized[i]);
-        spDataPoints[i] = {
-          'val': dataPoints[i],
-          'offset': normalized[i],
-        };
+        switch (key) {
+          case Sparkline.kFirst:
+            kFPoints.add(normalized[i]);
+            break;
+          case Sparkline.kMin:
+            kMinPoints.add(normalized[i]);
+            break;
+          case Sparkline.kMax:
+            kMaxPoints.add(normalized[i]);
+            break;
+          case Sparkline.kLast:
+            kLPoints.add(normalized[i]);
+            break;
+          default:
+            points.add(normalized[i]);
+            spDataPoints[i] = {
+              'val': dataPoints[i],
+              'offset': normalized[i],
+            };
+            break;
+        }
       }
     }
 
-    spDataPoints['first']['offset'] = normalized.first;
-    spDataPoints['last']['offset'] = normalized.last;
+    spDataPoints[Sparkline.kFirst]['offset'] = normalized.first;
+    spDataPoints[Sparkline.kLast]['offset'] = normalized.last;
 
     Offset startPoint = normalized[0];
     final Path path = Path();
@@ -645,9 +681,19 @@ class _SparklinePainter extends CustomPainter {
     }
 
     ///////////////////
-    // Draw sparkline before points
+    // Draw sparkline above points
     canvas.drawPath(path, paint);
 
+    ///////////////////
+    // Draw points above point labels
+    _drawPoints(canvas, points);
+    _drawPoints(canvas, kFPoints, Sparkline.kFirst);
+    _drawPoints(canvas, kLPoints, Sparkline.kLast);
+    _drawPoints(canvas, kMinPoints, Sparkline.kMin);
+    _drawPoints(canvas, kMaxPoints, Sparkline.kMax);
+
+    ///////////////////
+    // Draw point labels
     final keys = kLine?.toList() ?? [];
     if (pointShown != null) {
       final idx = keys.toList()..retainWhere((k) => k is int);
@@ -668,32 +714,34 @@ class _SparklinePainter extends CustomPainter {
       var spOffset = spDataPoints[key]['offset'];
 
       switch (key) {
-        case 'last':
+        case Sparkline.kLast:
           spOffset = Offset(
               width - spPainter.width - 6, spOffset.dy - spPainter.height / 2);
 
           spPainter.paint(canvas, spOffset);
           break;
-        case 'first':
+        case Sparkline.kFirst:
           spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
           spPainter.paint(canvas, spOffset);
           break;
-        case 'max':
+        case Sparkline.kMax:
           if ((spOffset != Offset(-1, -1))) {
             spOffset =
                 Offset(spOffset.dx - spPainter.width / 2, spOffset.dy + 6);
             spPainter.paint(canvas, spOffset);
           } else {
-            if (!kLine!.contains('first')) {
-              if (spDataPoints['max']['val'] == spDataPoints['first']['val']) {
-                spOffset = spDataPoints['first']['offset'];
+            if (!kLine!.contains(Sparkline.kFirst)) {
+              if (spDataPoints[Sparkline.kMax]['val'] ==
+                  spDataPoints[Sparkline.kFirst]['val']) {
+                spOffset = spDataPoints[Sparkline.kFirst]['offset'];
                 spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
                 spPainter.paint(canvas, spOffset);
               }
             }
-            if (!kLine!.contains('last')) {
-              if (spDataPoints['max']['val'] == spDataPoints['last']['val']) {
-                spOffset = spDataPoints['last']['offset'];
+            if (!kLine!.contains(Sparkline.kLast)) {
+              if (spDataPoints[Sparkline.kMax]['val'] ==
+                  spDataPoints[Sparkline.kLast]['val']) {
+                spOffset = spDataPoints[Sparkline.kLast]['offset'];
                 spOffset = Offset(width - spPainter.width - 6,
                     spOffset.dy - spPainter.height / 2);
                 spPainter.paint(canvas, spOffset);
@@ -701,22 +749,24 @@ class _SparklinePainter extends CustomPainter {
             }
           }
           break;
-        case 'min':
+        case Sparkline.kMin:
           if ((spOffset != Offset(-1, -1))) {
             spOffset =
                 Offset(spOffset.dx - spPainter.width / 2, spOffset.dy - 18);
             spPainter.paint(canvas, spOffset);
           } else {
-            if (!kLine!.contains('first')) {
-              if (spDataPoints['min']['val'] == spDataPoints['first']['val']) {
-                spOffset = spDataPoints['first']['offset'];
+            if (!kLine!.contains(Sparkline.kFirst)) {
+              if (spDataPoints[Sparkline.kMin]['val'] ==
+                  spDataPoints[Sparkline.kFirst]['val']) {
+                spOffset = spDataPoints[Sparkline.kFirst]['offset'];
                 spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
                 spPainter.paint(canvas, spOffset);
               }
             }
-            if (!kLine!.contains('last')) {
-              if (spDataPoints['min']['val'] == spDataPoints['last']['val']) {
-                spOffset = spDataPoints['last']['offset'];
+            if (!kLine!.contains(Sparkline.kLast)) {
+              if (spDataPoints[Sparkline.kMin]['val'] ==
+                  spDataPoints[Sparkline.kLast]['val']) {
+                spOffset = spDataPoints[Sparkline.kLast]['offset'];
                 spOffset = Offset(width - spPainter.width - 6,
                     spOffset.dy - spPainter.height / 2);
                 spPainter.paint(canvas, spOffset);
@@ -732,12 +782,18 @@ class _SparklinePainter extends CustomPainter {
           }
       }
     }
+  }
 
+  void _drawPoints(Canvas canvas, List<Offset> points, [String? key]) {
     if (points.isNotEmpty) {
+      if (pointsDraw != null) {
+        pointsDraw!(canvas, points, key);
+        return;
+      }
       Paint pointsPaint = Paint()
-        ..strokeCap = StrokeCap.round
+        ..color = pointColor
         ..strokeWidth = pointSize
-        ..color = pointColor;
+        ..strokeCap = StrokeCap.round;
       canvas.drawPoints(ui.PointMode.points, points, pointsPaint);
     }
   }
