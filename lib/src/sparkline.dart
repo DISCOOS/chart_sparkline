@@ -511,7 +511,10 @@ class _SparklinePainter extends CustomPainter {
           (pointsMode == PointsMode.last && i == dataPoints.length - 1) ||
           (pointsMode == PointsMode.atIndex && i == pointIndex)) {
         points.add(normalized[i]);
-        spDataPoints[i] = {'offset': normalized[i]};
+        spDataPoints[i] = {
+          'val': dataPoints[i],
+          'offset': normalized[i],
+        };
       }
     }
 
