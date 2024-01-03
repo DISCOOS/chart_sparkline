@@ -648,9 +648,11 @@ class _SparklinePainter extends CustomPainter {
     // Draw sparkline before points
     canvas.drawPath(path, paint);
 
-    final keys = pointShown == null && kLine != null
-        ? kLine ?? <String>[]
-        : spDataPoints.keys;
+    final keys = kLine?.toList() ?? [];
+    if (pointShown != null) {
+      final idx = keys.toList()..retainWhere((k) => k is int);
+      keys.addAll(idx);
+    }
 
     for (var key in keys) {
       var val = spDataPoints[key]['val'] as double;
