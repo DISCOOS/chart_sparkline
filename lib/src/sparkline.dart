@@ -71,6 +71,8 @@ class Sparkline extends StatelessWidget {
     this.pointsMode = PointsMode.none,
     this.pointIndex,
     this.pointSize = 4.0,
+    this.pointLabel,
+    this.pointShown,
     this.pointColor = const Color(0xFF0277BD), //Colors.lightBlue[800]
     this.sharpCorners = false,
     this.useCubicSmoothing = false,
@@ -143,6 +145,19 @@ class Sparkline extends StatelessWidget {
   ///
   /// Defaults to Colors.lightBlue[800].
   final Color pointColor;
+
+  /// Show point paint callback
+  ///
+  /// Takes the line point index in [data].
+  ///
+  /// If callback returns true, a circle is drawn for given point.
+  ///
+  /// This callback overrides behaviors given by [pointsMode] and [kLine]
+  final bool Function(int index)? pointShown;
+
+  /// Line point labels callback
+  /// Takes the line points from [data] and returns a string
+  final String Function(double value)? pointLabel;
 
   /// Determines if the sparkline path should have sharp corners where two
   /// segments intersect.
@@ -268,6 +283,8 @@ class Sparkline extends StatelessWidget {
           pointsMode: pointsMode,
           pointIndex: pointIndex,
           pointSize: pointSize,
+          pointShown: pointShown,
+          pointLabel: pointLabel,
           pointColor: pointColor,
           enableGridLines: enableGridLines,
           gridLinelabel: gridLinelabel,
@@ -314,6 +331,8 @@ class _SparklinePainter extends CustomPainter {
     required this.gridLineLabelColor,
     required this.enableThreshold,
     required this.thresholdSize,
+    this.pointShown,
+    this.pointLabel,
     this.gridLinelabelPrefix = '',
     this.gridLineLabelPrecision = 3,
     this.gridLinelabel,
@@ -348,6 +367,8 @@ class _SparklinePainter extends CustomPainter {
   final int? pointIndex;
   final double pointSize;
   final Color pointColor;
+  final bool Function(int index)? pointShown;
+  final String Function(double value)? pointLabel;
 
   final bool enableThreshold;
   final double thresholdSize;
@@ -413,6 +434,7 @@ class _SparklinePainter extends CustomPainter {
 
     final List<Offset> points = <Offset>[];
     final List<Offset> normalized = <Offset>[];
+
     //max,min,first,last
     final Map spDataPoints = {
       'max': {'val': _max, 'offset': Offset(-1, -1)},
@@ -477,10 +499,12 @@ class _SparklinePainter extends CustomPainter {
         }
       }
 
-      if (pointsMode == PointsMode.all ||
+      if (pointShown != null && pointShown!(i) ||
+          pointsMode == PointsMode.all ||
           (pointsMode == PointsMode.last && i == dataPoints.length - 1) ||
           (pointsMode == PointsMode.atIndex && i == pointIndex)) {
         points.add(normalized[i]);
+        spDataPoints[i] = {'offset': normalized[i]};
       }
     }
 
@@ -610,86 +634,90 @@ class _SparklinePainter extends CustomPainter {
       }
     }
 
-    if (kLine != null && kLine!.length > 0) {
-      for (var item in kLine!) {
-        var val = spDataPoints[item]['val'];
-        var spPainter = TextPainter(
-            text: TextSpan(
-                text: val.toString(),
-                style: TextStyle(
-                    color: gridLineColor,
-                    fontSize: 10.0,
-                    fontWeight: FontWeight.bold)),
-            textDirection: TextDirection.ltr);
-        spPainter.layout();
-        var spOffset = spDataPoints[item]['offset'];
+    ///////////////////
+    // Draw sparkline before points
+    canvas.drawPath(path, paint);
 
-        switch (item) {
-          case 'last':
-            spOffset = Offset(width - spPainter.width - 6,
-                spOffset.dy - spPainter.height / 2);
+    final keys = pointShown == null ? kLine ?? [] : spDataPoints.keys;
 
+    for (var key in keys) {
+      var val = spDataPoints[key]['val'] as double;
+      var spPainter = TextPainter(
+          text: TextSpan(
+              text: pointLabel != null ? pointLabel!(val) : val.toString(),
+              style: TextStyle(
+                  color: gridLineColor,
+                  fontSize: 10.0,
+                  fontWeight: FontWeight.bold)),
+          textDirection: TextDirection.ltr);
+      spPainter.layout();
+      var spOffset = spDataPoints[key]['offset'];
+
+      switch (key) {
+        case 'last':
+          spOffset = Offset(
+              width - spPainter.width - 6, spOffset.dy - spPainter.height / 2);
+
+          spPainter.paint(canvas, spOffset);
+          break;
+        case 'first':
+          spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
+          spPainter.paint(canvas, spOffset);
+          break;
+        case 'max':
+          if ((spOffset != Offset(-1, -1))) {
+            spOffset =
+                Offset(spOffset.dx - spPainter.width / 2, spOffset.dy + 6);
             spPainter.paint(canvas, spOffset);
-            break;
-          case 'first':
-            spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
-            spPainter.paint(canvas, spOffset);
-            break;
-          case 'max':
-            if ((spOffset != Offset(-1, -1))) {
-              spOffset =
-                  Offset(spOffset.dx - spPainter.width / 2, spOffset.dy + 6);
-              spPainter.paint(canvas, spOffset);
-            } else {
-              if (!kLine!.contains('first')) {
-                if (spDataPoints['max']['val'] ==
-                    spDataPoints['first']['val']) {
-                  spOffset = spDataPoints['first']['offset'];
-                  spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
-                  spPainter.paint(canvas, spOffset);
-                }
-              }
-              if (!kLine!.contains('last')) {
-                if (spDataPoints['max']['val'] == spDataPoints['last']['val']) {
-                  spOffset = spDataPoints['last']['offset'];
-                  spOffset = Offset(width - spPainter.width - 6,
-                      spOffset.dy - spPainter.height / 2);
-                  spPainter.paint(canvas, spOffset);
-                }
+          } else {
+            if (!kLine!.contains('first')) {
+              if (spDataPoints['max']['val'] == spDataPoints['first']['val']) {
+                spOffset = spDataPoints['first']['offset'];
+                spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
+                spPainter.paint(canvas, spOffset);
               }
             }
-            break;
-          case 'min':
-            if ((spOffset != Offset(-1, -1))) {
-              spOffset =
-                  Offset(spOffset.dx - spPainter.width / 2, spOffset.dy - 18);
-              spPainter.paint(canvas, spOffset);
-            } else {
-              if (!kLine!.contains('first')) {
-                if (spDataPoints['min']['val'] ==
-                    spDataPoints['first']['val']) {
-                  spOffset = spDataPoints['first']['offset'];
-                  spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
-                  spPainter.paint(canvas, spOffset);
-                }
-              }
-              if (!kLine!.contains('last')) {
-                if (spDataPoints['min']['val'] == spDataPoints['last']['val']) {
-                  spOffset = spDataPoints['last']['offset'];
-                  spOffset = Offset(width - spPainter.width - 6,
-                      spOffset.dy - spPainter.height / 2);
-                  spPainter.paint(canvas, spOffset);
-                }
+            if (!kLine!.contains('last')) {
+              if (spDataPoints['max']['val'] == spDataPoints['last']['val']) {
+                spOffset = spDataPoints['last']['offset'];
+                spOffset = Offset(width - spPainter.width - 6,
+                    spOffset.dy - spPainter.height / 2);
+                spPainter.paint(canvas, spOffset);
               }
             }
-            break;
-          default:
-        }
+          }
+          break;
+        case 'min':
+          if ((spOffset != Offset(-1, -1))) {
+            spOffset =
+                Offset(spOffset.dx - spPainter.width / 2, spOffset.dy - 18);
+            spPainter.paint(canvas, spOffset);
+          } else {
+            if (!kLine!.contains('first')) {
+              if (spDataPoints['min']['val'] == spDataPoints['first']['val']) {
+                spOffset = spDataPoints['first']['offset'];
+                spOffset = Offset(6.0, spOffset.dy - spPainter.height / 2);
+                spPainter.paint(canvas, spOffset);
+              }
+            }
+            if (!kLine!.contains('last')) {
+              if (spDataPoints['min']['val'] == spDataPoints['last']['val']) {
+                spOffset = spDataPoints['last']['offset'];
+                spOffset = Offset(width - spPainter.width - 6,
+                    spOffset.dy - spPainter.height / 2);
+                spPainter.paint(canvas, spOffset);
+              }
+            }
+          }
+          break;
+        default:
+          if (points.contains(spOffset)) {
+            spOffset =
+                Offset(spOffset.dx - spPainter.width / 2, spOffset.dy + 6);
+            spPainter.paint(canvas, spOffset);
+          }
       }
     }
-
-///////////////////
-    canvas.drawPath(path, paint);
 
     if (points.isNotEmpty) {
       Paint pointsPaint = Paint()
